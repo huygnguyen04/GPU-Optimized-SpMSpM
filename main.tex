@@ -1,0 +1,423 @@
+%%% Preamble
+\documentclass[paper=a4, fontsize=12pt]{article}
+% scrreprt // report // article
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amsfonts,amsthm} % Math packages
+\usepackage{graphicx}
+\usepackage{multicol}
+\usepackage{amsmath}
+\usepackage{scrextend}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage{blindtext}
+\newcommand*{\Scale}[2][4]{\scalebox{#1}{$#2$}}%
+\newcommand*{\Resize}[2]{\resizebox{#1}{!}{$#2$}}%
+\usepackage{enumitem}
+\usepackage{listingsutf8}
+\usepackage{soul}
+  \usepackage{float}
+\usepackage{epstopdf}
+\usepackage{subfig}
+\usepackage{amssymb}
+\setlist{leftmargin=5.5mm}
+\usepackage[margin=1.1in]{geometry}
+\usepackage[all]{xy}
+\usepackage{pdflscape}
+\usepackage{longtable} 
+\usepackage{cite}
+\usepackage[hyphens]{url}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{breaklinks=true}
+\urlstyle{same}
+
+\usepackage{setspace}
+\setlength{\intextsep}{3mm}
+
+
+%add gif
+\epstopdfDeclareGraphicsRule{.gif}{png}{.png}{convert gif:#1 png:\OutputFile}
+\AppendGraphicsExtensions{.gif}
+
+%\usepackage{titling}
+%\newcommand{\subtitle}[1]{%
+%  \posttitle{%
+ %   \par\end{center}
+  %  \begin{center}\large#1\end{center}
+   % \vskip0.5em}%
+    %}
+
+%\title{Fancy title}
+
+%Fingerprint recognition: Enhancement\\ and minutae extraction\\Recognition of identity by fingerprints images  \\ }
+%\subtitle{Statistical Image Analysis}
+
+%\author{\small Karen Ivette Baca Mendoza, 940524-C101, karenb@student.chalmers.se \\
+%\small Lucia Diego, 921212-2908, luciad@student.chalmers.se \\
+%\small Oscar Zapata Buenrostro, 931126-C264, zoscar@student.chalmers.se}
+
+
+
+%\date{\today}
+
+\begin{document}
+\begin{titlepage}
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}} % Defines a new command for the horizontal lines, change thickness here
+
+\center % Center everything on the page
+ 
+%----------------------------------------------------------------------------------------
+%	HEADING SECTIONS
+%----------------------------------------------------------------------------------------
+
+\textsc{\LARGE University of Virginia}\\[0.6cm] % Name of your university/college
+
+\textsc{\Large Parallel Computing }\\[0.6cm] % Major heading such as course name
+\textsc{\large (CS 4444)}\\[0.6cm] % Minor heading such as course title
+
+\HRule \\[0.4cm]
+{ \huge \bfseries Final Project}\\ % Title of your document
+\HRule \\[1.5cm]
+
+
+\textsc{\LARGE Authors }\\[0.3cm] % Major heading such as course name
+\textsc{Jou Barzdukas}\\
+\textsc{Huy Nguyen}\\
+\textsc{Tanush Siotia}\\[0.6cm]% Minor heading}
+
+\textsc{\LARGE Professor }\\[0.3cm] % Major heading such as course name
+\textsc{Adwait Jog}
+
+
+
+
+\end{titlepage}
+
+
+%\section{dhish}
+%\subsection{hcdij}
+%\subsubsection{jdhvdjh}
+%\paragraph{djhcjdh}
+%\begin{figure}[H]
+%\centering
+%\includegraphics[width=1\textwidt%h]{diagram2.png}
+%\caption{\label{fig:xps22}Methodo%logy diagram}
+%\end{figure}
+
+
+\newpage 
+%\tableofcontents
+% \newpage
+% \begin{multicols}{}
+
+\section{Introduction}
+
+Sparse Matrix–Sparse Matrix Multiplication (SpMSpM) is a fundamental operation across multiple domains such as scientific computing, and machine learning. \\
+The project provides a CPU baseline implementation, a baseline GPU implementation followed by 4 kernels each incrementally incorporating additional optimizations. Kernel0.cu has our base GPU implementation without any optimizations, Kernel1.cu contains our first optimizations building upon the base implementation, Kernel2.cu introduces hash-based accumulation which builds on Kernel1.cu, Kernel3.cu implements work-adaptive hash tables using features from recent research papers \cite{2}, and finally Kernel4.cu contains our most optimized implementation combining dynamic scheduling, thread coarsening, and advanced warp primitives inspired by \cite{1}. Our goal, through this report, is to compare the performance of these GPU implementations, describe the optimizations used, and assess their overall effect on runtime across different GPUs.
+
+\section{Kernel Optimizations}
+
+In this section, we describe the three optimized GPU kernels implemented in this project. We talk about the purpose, design, and performance benefits of each optimization implemented in the GPU kernels.
+
+% ============================================================
+\subsection{Kernel 1: Warp-Level Parallelism and Shared Memory Accumulation}
+% ============================================================
+
+Kernel~1 builds directly on the baseline GPU implementation (Kernel 0) and does so in two ways:
+
+\subsubsection{Optimization: Warp-Level Parallelism}
+In Kernel 0, each row of matrix~$A$ is processed by a single thread.  
+This leads to severe underutilization, especially for rows with many nonzeros. Kernel 1 assigns one warp (32 threads) per row. Threads in the warp cooperatively process entries from the corresponding row, improving memory throughput and increasing parallelism speeding up the computation.
+
+\subsubsection{Optimization: Shared Memory Accumulator}
+Kernel 0 uses a global-memory 'accumulator' for storing partial results.
+Global memory accesses have high latency, and repeated updates are extremely expensive. Kernel~1 moves the accumulator to the GPU's shared memory, allocating per-warp arrays:
+\begin{verbatim}
+__shared__ float sharedValues[WARPS_PER_BLOCK][MAX_NNZ_PER_ROW];
+__shared__ unsigned int sharedCols[WARPS_PER_BLOCK][MAX_NNZ_PER_ROW];
+\end{verbatim}
+Shared memory is much faster than global memory and provides significantly  
+better locality and bandwidth. However, the speedup from this is much better observed in larger matrices which warrants using this shared memory.
+
+\subsubsection{Benefits}
+\begin{itemize}
+    \item 32 threads cooperate on each row $\rightarrow$ much higher parallelism.
+    \item On-chip shared memory drastically reduces accumulation latency.
+    \item Warp-cooperative iteration over rows of $B$ improves memory throughput.
+\end{itemize}
+
+\subsubsection{Limitations}
+\begin{itemize}
+    \item Kernel~1 still performs an $O(k)$ linear search in shared memory to find
+          whether a column already exists in the accumulator.
+    \item The accumulator size must be tuned via \verb|MAX_NNZ_PER_ROW|.
+\end{itemize}
+
+% ============================================================
+\subsection{Kernel 2: Shared-Memory Hash Table (O(1) Lookup)}
+% ============================================================
+
+Kernel~2 addresses a major bottleneck of Kernel~1. The accumulator still requires a linear search to locate columns. For rows with many nonzeros, this can dominate the runtime. Kernel~2 replaces the accumulator with a shared-memory hash table using linear probing.
+
+\subsubsection{Optimization: O(1) Hash-Based Accumulation}
+Each warp receives its own hash table in shared memory:
+\begin{verbatim}
+__shared__ unsigned int hashCols[WARPS_PER_BLOCK][HASH_SIZE];
+__shared__ float hashValues[WARPS_PER_BLOCK][HASH_SIZE];
+\end{verbatim}
+The hash function is the power-of-two Knuth multiplicative hash:
+\begin{verbatim}
+(col * 2654435761u) & (HASH_SIZE - 1)
+\end{verbatim}
+Insertion uses \verb|atomicCAS| for correctness under warp-level races,  
+and updates use \verb|atomicAdd|.
+
+\subsubsection{Benefits}
+\begin{itemize}
+    \item Replaces $O(k)$ linear search with $O(1)$ average lookup and insert.
+    \item Large hash tables significantly reduce collision probability.
+    \item Dramatically faster on rows with large numbers of unique output columns.
+\end{itemize}
+
+\subsubsection{Limitations}
+\begin{itemize}
+    \item Fixed hash table size may overflow if a row has more than \verb|HASH_SIZE| distinct columns.
+    \item Linear probing performance still depends on collision patterns.
+    \item Larger HASH\_SIZE increases shared memory consumption.
+\end{itemize}
+
+% ============================================================
+\subsection{Kernel 3: Work-Adaptive Hash Table (Based on \cite{2})}
+% ============================================================
+
+For Kernel 3, we draw optimization inspiration from “Optimizing Sparse Matrix–Matrix Multiplication for the GPU” by Dalton, Olson, and Bell (2015) \cite{2}. In that paper the authors propose using an adaptive, per-row hash-based accumulator to exploit shared memory more efficiently.
+
+\subsubsection*{Optimization: Adaptive Hash Table per Row}
+
+\begin{itemize}
+  \item For each output row, the required size of the accumulator (i.e.\ expected number of distinct output columns) is not known a priori; allocating a large fixed accumulator for all rows wastes shared memory
+  \item The paper suggests estimating per-row work and then allocating a hash table whose size is tuned to that estimate, so that the hash table has low load factor, minimizing collisions and maximizing shared-memory utilization
+  \item The hash table uses a simple \textbf{open-addressing + linear probing} scheme, with a hash function that is effectively \texttt{col \& (table\_size - 1)})
+\end{itemize}
+
+\subsubsection*{Implementation in Our Kernel 3}
+
+\begin{itemize}
+  \item We compute for each row \(i\) an estimate
+  \[
+    F_i = \sum_{a \in A_i} \mathrm{nnz}(B_a),
+  \]
+  analogously to Dalton’s “expansion count.”  
+  \item Based on thresholds on \(F_i\), we bucket rows into \emph{small}, \emph{medium}, or \emph{large} categories.  
+  \item We then seperate into different workflows for each bucket:
+  \item Within each warp’s shared-memory hash table, we perform open-addressing with linear probing: initial slot is  
+    \[
+      \texttt{hashIdx = (col * CONST) \& (HASH\_SIZE - 1)}
+    \]  
+    (or simply \(\mathtt{col \; \& \; (HASH\_SIZE-1)}\) if using power-of-two table),  
+    then probe linearly until finding an empty slot or a matching column.  
+  \item We use atomic operations (e.g.\ \texttt{atomicCAS}) when inserting new columns to ensure correctness under concurrent thread access, and \texttt{atomicAdd} to accumulate values.  
+\end{itemize}
+
+\subsubsection*{Benefits}
+
+\begin{itemize}
+  \item Shared-memory hash tables whose size is tuned per row: avoids over-allocating for small rows, and provides sufficient capacity for large, expensive rows.  
+  \item Low load factor $\rightarrow$ fewer collisions $\rightarrow$ faster insert and accumulation.  
+  \item Better utilization of shared memory across all rows, improving occupancy and throughput.  
+\end{itemize}
+
+\subsubsection*{Limitations and Considerations}
+\begin{itemize}
+  \item The thresholds for small/medium/large buckets must be tuned carefully — poor thresholds can lead to suboptimal shared memory usage or too many collisions.  
+  \item Even with a hash table, worst-case probing (e.g. very dense rows with many nonzeros) may degrade performance.  
+\end{itemize}
+In practice, as seen in the results below, we often found this to be only marginally slower than our kernel2.cu. This is probably due to some of the limitations discussed above.
+
+% ============================================================
+\subsection{Kernel 4: Fully Optimized SpGEMM with Dynamic Scheduling}
+% ============================================================
+
+Kernel~4 builds upon Kernel~2's hash-based approach and incorporates multiple advanced optimizations inspired by recent GPU SpGEMM research \cite{1}.
+
+\subsubsection*{Optimization: Dynamic Row Scheduling (Work Stealing)}
+Instead of statically assigning one warp per row, Kernel~4 uses a global atomic counter to implement dynamic scheduling. Each warp repeatedly fetches the next available row index:
+\begin{verbatim}
+if (laneId == 0) row = atomicAdd(nextRow_d, 1u);
+row = __shfl_sync(FULL_MASK, row, 0);
+\end{verbatim}
+This load-balancing technique ensures that warps processing light rows immediately move on to new work, rather than idling while other warps handle heavy rows.
+
+\subsubsection*{Optimization: Multi-Warp Block Configuration}
+Kernel~4 uses \texttt{BLOCK\_SIZE=64} with 2 warps per block (configurable via \texttt{WARPS\_PER\_BLOCK}). Each warp maintains its own hash table in shared memory:
+\begin{verbatim}
+__shared__ unsigned int hashCols[WARPS_PER_BLOCK][HASH_SIZE];
+__shared__ float        hashValues[WARPS_PER_BLOCK][HASH_SIZE];
+\end{verbatim}
+This allows multiple warps to work concurrently within a block while maintaining separate accumulators.
+
+\subsubsection*{Optimization: Hash-Based Accumulation with Knuth Hash}
+Kernel~4 uses a power-of-two Knuth multiplicative hash for efficient key distribution:
+\begin{verbatim}
+__device__ __forceinline__ unsigned int hashFunc4(unsigned int col) {
+    return (col * 2654435761u) & (HASH_SIZE - 1);
+}
+\end{verbatim}
+With \texttt{HASH\_SIZE=2048}, this provides ample capacity for rows with high numbers of unique output columns while keeping the load factor low to minimize collisions.
+
+\subsubsection*{Optimization: Read-Only Cache and Warp Primitives}
+The kernel uses \texttt{\_\_ldg()} intrinsics for read-only global memory accesses, leveraging the texture cache for improved memory throughput:
+\begin{verbatim}
+col1   = __ldg(&csrMatrix1_d->colIdxs[i]);
+value1 = __ldg(&csrMatrix1_d->values[i]);
+\end{verbatim}
+Additionally, warp-level primitives are extensively used: \texttt{\_\_shfl\_sync} for broadcasting row bounds to all lanes, \texttt{\_\_ballot\_sync} for warp voting during output, and \texttt{\_\_popc} for efficient population counts in the cooperative write-out phase.
+
+\subsubsection*{Optimization: Warp-Cooperative Output with Prefix Sums}
+The output phase uses warp-level ballot and population count operations to efficiently compact hash table entries into contiguous COO output:
+\begin{verbatim}
+unsigned int mask = __ballot_sync(FULL_MASK, hasEntry);
+unsigned int rank = __popc(mask & ((1u << laneId) - 1u));
+\end{verbatim}
+This eliminates the need for explicit prefix sum computations and enables fully coalesced writes.
+
+\subsubsection*{Benefits}
+\begin{itemize}
+    \item Dynamic scheduling improves load balance across warps.
+    \item Multi-warp blocks increase occupancy and throughput.
+    \item Read-only cache (\texttt{\_\_ldg}) reduces memory latency.
+    \item Warp primitives enable efficient cooperative computation and output.
+\end{itemize}
+
+\subsubsection*{Parameter Tuning}
+The current Kernel~4 configuration is tuned for matrices with \textbf{32 nnz per row} targeting the \textbf{48KB shared memory} limit of the RTX 4000 Quadro. The key tunable parameters are:
+
+\textbf{Shared Memory Calculation:}
+\[
+\text{Shared Memory (bytes)} = \texttt{WARPS\_PER\_BLOCK} \times \texttt{HASH\_SIZE} \times (\underbrace{4}_{\text{col}} + \underbrace{4}_{\text{val}})
+\]
+With \texttt{BLOCK\_SIZE=64} (2 warps) and \texttt{HASH\_SIZE=2048}:
+\[
+2 \times 2048 \times 8 = 32{,}768 \text{ bytes} = 32\text{KB} \quad (\text{fits within 48KB})
+\]
+
+\textbf{Hash Size Selection:}
+For $k$ nnz per row, the worst-case unique output columns is approximately $k^2$ (when columns are uniformly distributed). To maintain a low load factor ($\sim$50\%) and minimize collisions:
+\[
+\texttt{HASH\_SIZE} \geq 1.5 \times k^2 \quad \text{to} \quad 2 \times k^2
+\]
+For 32 nnz/row: expected unique columns $\approx 1024$, so \texttt{HASH\_SIZE=2048} provides adequate headroom.
+
+\textbf{Example Hash Sizes for Different Densities:}
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{NNZ/Row} & \textbf{Products ($k^2$)} & \textbf{Recommended \texttt{HASH\_SIZE}} \\ \hline
+16 & 256  & 512 \\ \hline
+32 & 1024 & 2048 \\ \hline
+64 & 4096 & 4096--8192 (if shared memory allows) \\ \hline
+\end{tabular}
+\end{center}
+
+\textbf{Block Size Selection:}
+\texttt{BLOCK\_SIZE} must be a multiple of 32 (warp size). The trade-off is:
+\begin{itemize}
+    \item Larger \texttt{BLOCK\_SIZE} $\rightarrow$ more warps per block $\rightarrow$ higher parallelism but more shared memory consumption.
+    \item Smaller \texttt{BLOCK\_SIZE} $\rightarrow$ allows larger \texttt{HASH\_SIZE} $\rightarrow$ fewer hash collisions.
+\end{itemize}
+
+\textbf{*Important Note on UVA CS GPU Server:} Although newer GPUs like the A100 and H100 theoretically support up to 164KB and 228KB of shared memory per SM respectively, the UVA CS GPU server enforces a \textbf{default limit of 48KB shared memory per block} across all GPUs. This was verified using a CUDA device properties query:
+\begin{verbatim}
+cudaGetDeviceProperties(&prop, 0);
+printf("Shared memory per block: %zu KB\n", prop.sharedMemPerBlock / 1024);
+// Output on H100: 48 KB
+\end{verbatim}
+To utilize more than 48KB per block on capable hardware, one would need to use \texttt{cudaFuncSetAttribute()} to request extended shared memory, which may not be available on all cluster configurations.
+
+For collision-sensitive workloads (high nnz/row with random distribution), prioritize larger \texttt{HASH\_SIZE}. For regular workloads with moderate nnz/row, prioritize larger \texttt{BLOCK\_SIZE} for better occupancy.
+
+
+\section{Results}
+
+We run these 4 implementations of SpMSpM on multiple GPUs and note down their various runtimes in Table \ref{table:table1}. Note that when running each implementation for the first time on a new GPU, we started taking values after the 3rd run so as the GPUs could 'warm up' to the task. \\
+
+1. matrix0.txt (10000 rows and 32 nnz per row)
+\begin{table}[H]
+\centering
+\begin{tabular}{|l||l|l|l|l|l|l|}
+\hline
+  GPU Type / Runtime (ms)&  CPU&Basic GPU&Kernel 1&Kernel 2&Kernel 3&Kernel 4\\ \hline
+  Quadro RTX 4000 (Server 10)&  102.51&58.32&90.89& 19.21&34.24&8.77 \\ \hline
+  Quadro RTX 6000&  116.81&29.56&32.86& 8.09&13.87&4.34 \\ \hline
+  Hopper: H100\_96GB&  85.85&9.03&5.75& 3.53&3.90&2.79 \\\hline
+\end{tabular}
+\caption{Run times of each implementation averaged across 10 runs}
+    \label{table:table1} 
+\end{table}
+
+
+
+2. matrix\_small.txt (5000 rows and 32 nnz per row), generated with   ```./gen\_coo 5000 32 matrix\_small.txt```
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l||l|l|l|l|l|l|}
+\hline
+  GPU Type / Runtime (ms)&  CPU&Basic GPU&Kernel 1&Kernel 2&Kernel 3&Kernel 4\\ \hline
+  Quadro RTX 4000 (Server 10)&  48.28&20.28&40.29& 9.11&15.46&5.33 \\ \hline
+  Quadro RTX 6000&  54.89&12.36&16.83&  4.52&6.85&3.13 \\ \hline
+  Hopper: H100\_96GB&  42.23&6.47&3.70& 2.65&2.78&2.26 \\\hline
+\end{tabular}
+\caption{Run times of each implementation averaged across 10 runs}
+    \label{table:table2} 
+\end{table}
+
+
+
+3. matrix\_medium.txt (8000 rows and 32 nnz per row), generated with   ```./gen\_coo 8000 32 matrix\_medium.txt```
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l||l|l|l|l|l|l|}
+\hline
+  GPU Type / Runtime (ms)&  CPU&Basic GPU&Kernel 1&Kernel 2&Kernel 3&Kernel 4\\ \hline
+  Quadro RTX 4000 (Server 10)&  78.32&31.32&70.62& 14.63&26.67&6.31 \\ \hline
+  Quadro RTX 6000&  89.37&20.33&25.72&  6.52&11.31&3.70 \\ \hline
+  Hopper: H100\_96GB&  67.16&7.69&5.25& 3.04&3.66&2.34 \\\hline
+\end{tabular}
+\caption{Run times of each implementation averaged across 10 runs}
+    \label{table:table3} 
+\end{table}
+
+
+4. matrix\_large.txt (15000 rows and 32 nnz per row), generated with   ```./gen\_coo 15000 32 matrix\_large.txt```
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l||l|l|l|l|l|l|}
+\hline
+  GPU Type / Runtime (ms)&  CPU&Basic GPU&Kernel 1&Kernel 2&Kernel 3&Kernel 4\\ \hline
+  Quadro RTX 4000 (Server 10)&  154.36&84.84&131.68& 28.76&52.56&12.13 \\ \hline
+  Quadro RTX 6000&  174.94&46.63&47.99& 11.48&20.68&5.71 \\ \hline
+  Hopper: H100\_96GB&  126.43&11.18&7.48& 3.89&4.45&2.56 \\\hline
+\end{tabular}
+\caption{Run times of each implementation averaged across 10 runs}
+    \label{table:table4} 
+\end{table}
+
+
+
+\section{Conclusion}
+
+The performance results demonstrate that GPU acceleration significantly outperforms the CPU baseline across all tested architectures. Introducing warp-level parallelism and shared memory in Kernel 1 offers modest gains, while the hash-based lookup optimization in Kernel 2 yields substantial speedup. Kernel 3's adaptive hash sizing maintains performance with a minor overhead from row bucketing. Kernel 4 combines the best aspects of Kernel 2 with additional optimizations including dynamic row scheduling for load balancing, multi-warp block configuration for improved occupancy, read-only cache optimization via \texttt{\_\_ldg()}, and warp-cooperative output using ballot and population count intrinsics. Overall, these optimizations effectively leverage GPU hardware features to deliver scalable and efficient sparse matrix multiplication.
+% \end{multicols}
+
+\newpage
+\begin{thebibliography}{X}
+
+\bibitem{1} Wang, Yizhuo, et al. “Optimizing General Sparse Matrix-Matrix Multiplication on the GPU.” \textit{ACM Transactions on Architecture and Code Optimization}, vol. 22, no. 4, Nov. 2025, Association for Computing Machinery, doi:10.1145/3774654.
+
+
+\bibitem{2} Dalton, Steven, Luke Olson, and Nathan Bell. “Optimizing Sparse Matrix—Matrix Multiplication for the GPU.” \textit{ACM Transactions on Mathematical Software}, vol. 41, no. 4, Oct. 2015, Association for Computing Machinery, doi:10.1145/2699470.
+
+\end{thebibliography}
+\end{document}
