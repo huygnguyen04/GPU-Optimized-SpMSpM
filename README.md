@@ -1,8 +1,6 @@
 # GPU-Optimized Sparse Matrix–Sparse Matrix Multiplication (SpMSpM)
 
-## Documentation
-
-### 📄 [**Final Report**](https://drive.google.com/file/d/1DvDdbefz91X2rnek4_Tlkc19BMdgRaYB/view?usp=sharing) - Full analysis of kernel optimizations, performance benchmarks, and GPU architecture insights for SpMSpM.
+## 📄 [**Final Report**](https://drive.google.com/file/d/1DvDdbefz91X2rnek4_Tlkc19BMdgRaYB/view?usp=sharing) - Full analysis of kernel optimizations, performance benchmarks, and GPU architecture insights for SpMSpM.
 
 ## Project Overview
 
